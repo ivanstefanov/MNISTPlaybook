@@ -1,0 +1,32 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Виртуална среда
+.venv/
+venv/
+ENV/
+env/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Данни и модели ---
+data/
+datasets/
+*.pt
+*.pth
+*.bin
+
+# --- VS Code ---
+.vscode/
+
+# --- Системни / временни ---
+.DS_Store
+Thumbs.db
+
+# Логове / временни файлове
+*.log
+*.tmp
