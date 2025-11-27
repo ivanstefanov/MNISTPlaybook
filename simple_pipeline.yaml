@@ -1,0 +1,178 @@
+# PIPELINE DEFINITION
+# Name: simple-echo-pipeline-with-3-steps
+# Description: A minimal Kubeflow Pipeline with three steps, where step 2 and 3 run in parallel after step 1.
+# Inputs:
+#    message: str [Default: 'Hello from Kubeflow!']
+components:
+  comp-echo-step:
+    executorLabel: exec-echo-step
+    inputDefinitions:
+      parameters:
+        message:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-second-echo-step:
+    executorLabel: exec-second-echo-step
+    inputDefinitions:
+      parameters:
+        message:
+          parameterType: STRING
+  comp-third-step-read-from-first:
+    executorLabel: exec-third-step-read-from-first
+    inputDefinitions:
+      parameters:
+        message_from_step1:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-echo-step:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - echo_step
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.15.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef echo_step(message: str) -> str:\n    # Define a step in the pipeline\
+          \ which Print a message\n    # create container operation with certain image\
+          \ wnd execute some comamnds with certain parameters\n    # (in v2 this is\
+          \ expressed as a Python function, Kubeflow generates the container spec)\n\
+          \    print(f'Step 1: {message}')\n    # this operation exits output parameter\
+          \ with name \"message\", which is in message.txt file inside the container\n\
+          \    # (in v2 the returned value becomes the output of the step)\n    return\
+          \ f'Step 1: {message}'\n\n"
+        image: python:3.11
+    exec-second-echo-step:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - second_echo_step
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.15.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef second_echo_step(message: str):\n    # Add a second step to print\
+          \ another message\n    print(f'Step 2 (after step 1): {message}')\n\n"
+        image: python:3.11
+    exec-third-step-read-from-first:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - third_step_read_from_first
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.15.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef third_step_read_from_first(message_from_step1: str):\n    # print\
+          \ the content of the message output param\n    print(f'Step 3 got this from\
+          \ step 1: {message_from_step1}')\n\n"
+        image: python:3.11
+pipelineInfo:
+  description: A minimal Kubeflow Pipeline with three steps, where step 2 and 3 run
+    in parallel after step 1.
+  name: simple-echo-pipeline-with-3-steps
+root:
+  dag:
+    tasks:
+      echo-step:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-echo-step
+        inputs:
+          parameters:
+            message:
+              componentInputParameter: message
+        taskInfo:
+          name: echo-step
+      second-echo-step:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-second-echo-step
+        dependentTasks:
+        - echo-step
+        inputs:
+          parameters:
+            message:
+              componentInputParameter: message
+        taskInfo:
+          name: second-echo-step
+      third-step-read-from-first:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-third-step-read-from-first
+        dependentTasks:
+        - echo-step
+        inputs:
+          parameters:
+            message_from_step1:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: echo-step
+        taskInfo:
+          name: third-step-read-from-first
+  inputDefinitions:
+    parameters:
+      message:
+        defaultValue: Hello from Kubeflow!
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.15.1
