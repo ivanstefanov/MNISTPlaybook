@@ -33,3 +33,21 @@
     "ruff.format.enable": true,
 ```
 4.  Set the notebook kernel with the python.exe from the current .venv by choosing it manually
+
+
+# Run py files
+1. Activate the virtual environment (if not already activated) by running ```.\.venv\Scripts\activate```
+2. Run ```python <path_and_name_of_python_file>.py``` Example: `python pipelines/simple_pipeline.py`
+3. If you have errors, most of the time, install whatever is needed into the virtual environment
+
+# Usefull commands in WSL
+ - Install ubunti in WSL - `wsl --install -d Ubuntu`
+ - Start ubuntu - `wsl -d Ubuntu`
+ - See pods
+ - see pods in your pipeline `kubectl get pods -n participant-20` or `kubectl get pods -n kubeflow`
+ - check pod logs `kubectl logs <pod-name> -n kubeflow`
+ - `microk8s status --wait-ready` make sure MicroK8s works
+ - `microk8s kubectl get ns` returns namespaces. should show them withour errors
+ - `kubectl` - use AWS
+ - `microk8s kubectl` - user local MicroK8s
+ - `microk8s kubectl port-forward -n kubeflow svc/ml-pipeline-ui 8080:80` - start port forward, then open http://localhost:8080

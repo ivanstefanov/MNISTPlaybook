@@ -1,0 +1,340 @@
+# PIPELINE DEFINITION
+# Name: mnist-pipeline-fast-local
+# Description: MNIST-like preprocessing, training and evaluation (fast, local-friendly)
+# Inputs:
+#    batch_size: int [Default: 64.0]
+#    epochs: int [Default: 1.0]
+#    lr: float [Default: 0.001]
+components:
+  comp-evaluate-mnist:
+    executorLabel: exec-evaluate-mnist
+    inputDefinitions:
+      artifacts:
+        model_in:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        test_data:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+      parameters:
+        batch_size:
+          defaultValue: 64.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      artifacts:
+        eval_metrics_out:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-preprocess-mnist:
+    executorLabel: exec-preprocess-mnist
+    outputDefinitions:
+      artifacts:
+        test_data:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        train_data:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-train-mnist:
+    executorLabel: exec-train-mnist
+    inputDefinitions:
+      artifacts:
+        train_data:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+      parameters:
+        batch_size:
+          defaultValue: 64.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        epochs:
+          defaultValue: 1.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        lr:
+          defaultValue: 0.001
+          isOptional: true
+          parameterType: NUMBER_DOUBLE
+    outputDefinitions:
+      artifacts:
+        model_out:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        train_metrics_out:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-evaluate-mnist:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - evaluate_mnist
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.4.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'torch' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef evaluate_mnist(\n    test_data: Input[Artifact],\n    model_in:\
+          \ Input[Artifact],\n    eval_metrics_out: Output[Artifact],\n    batch_size:\
+          \ int = 64,\n):\n    \"\"\"\n    \u0417\u0430\u0440\u0435\u0436\u0434\u0430\
+          \ \u043C\u043E\u0434\u0435\u043B\u0430 \u0438 \u0442\u0435\u0441\u0442\u043E\
+          \u0432\u0438\u0442\u0435 \u0434\u0430\u043D\u043D\u0438, \u0438\u0437\u043C\
+          \u0435\u0440\u0432\u0430 loss \u0438 accuracy \u0438 \u0437\u0430\u043F\u0438\
+          \u0441\u0432\u0430 JSON.\n    \"\"\"\n    import json\n    import os\n \
+          \   import torch\n    from torch import nn\n    from torch.utils.data import\
+          \ DataLoader, TensorDataset\n\n    class NeuralNetwork(nn.Module):\n   \
+          \     def __init__(self):\n            super().__init__()\n            self.flatten\
+          \ = nn.Flatten()\n            self.linear_relu_stack = nn.Sequential(\n\
+          \                nn.Linear(28 * 28, 512),\n                nn.ReLU(),\n\
+          \                nn.Linear(512, 512),\n                nn.ReLU(),\n    \
+          \            nn.Linear(512, 10),\n            )\n\n        def forward(self,\
+          \ x):\n            x = self.flatten(x)\n            logits = self.linear_relu_stack(x)\n\
+          \            return logits\n\n    def evaluate(dataloader, model, loss_fn,\
+          \ device):\n        size = len(dataloader.dataset)\n        num_batches\
+          \ = len(dataloader)\n        model.eval()\n        test_loss, correct =\
+          \ 0.0, 0\n        with torch.no_grad():\n            for X, y in dataloader:\n\
+          \                X, y = X.to(device), y.to(device)\n                pred\
+          \ = model(X)\n                test_loss += loss_fn(pred, y).item()\n   \
+          \             correct += (pred.argmax(1) == y).type(torch.float).sum().item()\n\
+          \n        test_loss /= num_batches\n        accuracy = correct / size\n\
+          \        return test_loss, accuracy\n\n    device = \"cuda\" if torch.cuda.is_available()\
+          \ else \"cpu\"\n    print(f\"[eval] Using device: {device}\")\n\n    data\
+          \ = torch.load(test_data.path)\n    images = data[\"images\"]\n    labels\
+          \ = data[\"labels\"]\n\n    dataset = TensorDataset(images, labels)\n\n\
+          \    cpu_count = os.cpu_count() or 1\n    num_workers = max(cpu_count -\
+          \ 1, 1)\n\n    test_dataloader = DataLoader(\n        dataset,\n       \
+          \ batch_size=batch_size,\n        shuffle=False,\n        num_workers=num_workers,\n\
+          \        pin_memory=(device == \"cuda\"),\n    )\n\n    model = NeuralNetwork().to(device)\n\
+          \    state_dict = torch.load(model_in.path, map_location=device)\n    model.load_state_dict(state_dict)\n\
+          \n    loss_fn = nn.CrossEntropyLoss()\n\n    test_loss, acc = evaluate(test_dataloader,\
+          \ model, loss_fn, device)\n\n    print(f\"[eval] Test: loss={test_loss:.4f},\
+          \ acc={acc:.4f}\")\n\n    eval_metrics = {\n        \"test_loss\": float(test_loss),\n\
+          \        \"accuracy\": float(acc),\n        \"batch_size\": batch_size,\n\
+          \        \"num_samples\": int(len(dataset)),\n    }\n\n    with open(eval_metrics_out.path,\
+          \ \"w\", encoding=\"utf-8\") as f:\n        json.dump(eval_metrics, f, indent=2)\n\
+          \n    print(f\"[eval] Saved eval metrics to: {eval_metrics_out.path}\")\n\
+          \n"
+        image: python:3.11-slim
+    exec-preprocess-mnist:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - preprocess_mnist
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.4.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'torch' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef preprocess_mnist(\n    train_data: Output[Artifact],\n    test_data:\
+          \ Output[Artifact],\n):\n    \"\"\"\n    \u0413\u0435\u043D\u0435\u0440\u0438\
+          \u0440\u0430 MNIST-\u043F\u043E\u0434\u043E\u0431\u043D\u0438 \u0434\u0430\
+          \u043D\u043D\u0438 \u0438 \u0433\u0438 \u0437\u0430\u043F\u0438\u0441\u0432\
+          \u0430 \u043A\u0430\u0442\u043E torch \u0442\u0435\u043D\u0437\u043E\u0440\
+          \u0438.\n    \u0424\u043E\u0440\u043C\u0430\u0442:\n      - images: (N,\
+          \ 1, 28, 28)\n      - labels: (N,)\n    \"\"\"\n\n    import torch\n\n \
+          \   num_train = 2000\n    num_test = 500\n    num_classes = 10\n\n    #\
+          \ \u0421\u043B\u0443\u0447\u0430\u0439\u043D\u0438 \"\u043A\u0430\u0440\u0442\
+          \u0438\u043D\u043A\u0438\" \u0438 \u0435\u0442\u0438\u043A\u0435\u0442\u0438\
+          \ \u2013 \u0434\u043E\u0441\u0442\u0430\u0442\u044A\u0447\u043D\u0438 \u0437\
+          \u0430 \u0434\u0435\u043C\u043E\u043D\u0441\u0442\u0440\u0430\u0446\u0438\
+          \u044F \u043D\u0430 \u043F\u0430\u0439\u043F\u043B\u0430\u0439\u043D\n \
+          \   train_images = torch.rand(num_train, 1, 28, 28)\n    test_images = torch.rand(num_test,\
+          \ 1, 28, 28)\n\n    train_labels = torch.randint(0, num_classes, (num_train,))\n\
+          \    test_labels = torch.randint(0, num_classes, (num_test,))\n\n    torch.save({\"\
+          images\": train_images, \"labels\": train_labels}, train_data.path)\n  \
+          \  torch.save({\"images\": test_images, \"labels\": test_labels}, test_data.path)\n\
+          \n    print(f\"Saved train data to: {train_data.path}\")\n    print(f\"\
+          Saved test data to:  {test_data.path}\")\n\n"
+        image: python:3.11-slim
+    exec-train-mnist:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_mnist
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.4.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'torch' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_mnist(\n    train_data: Input[Artifact],\n    model_out:\
+          \ Output[Artifact],\n    train_metrics_out: Output[Artifact],\n    epochs:\
+          \ int = 1,\n    batch_size: int = 64,\n    lr: float = 1e-3,\n):\n    \"\
+          \"\"\n    \u0422\u0440\u0435\u043D\u0438\u0440\u0430 \u043F\u0440\u043E\u0441\
+          \u0442 MLP \u0432\u044A\u0440\u0445\u0443 \u0434\u0430\u043D\u043D\u0438\
+          \u0442\u0435 \u043E\u0442 train_data \u0438 \u0437\u0430\u043F\u0438\u0441\
+          \u0432\u0430:\n      - model_out: state_dict \u043D\u0430 \u043C\u043E\u0434\
+          \u0435\u043B\u0430 (torch.save)\n      - train_metrics_out: JSON \u0441\
+          \ \u043E\u0441\u043D\u043E\u0432\u043D\u0438 \u043C\u0435\u0442\u0440\u0438\
+          \u043A\u0438\n    \"\"\"\n    import json\n    import os\n    import torch\n\
+          \    from torch import nn\n    from torch.utils.data import DataLoader,\
+          \ TensorDataset\n\n    class NeuralNetwork(nn.Module):\n        def __init__(self):\n\
+          \            super().__init__()\n            self.flatten = nn.Flatten()\n\
+          \            self.linear_relu_stack = nn.Sequential(\n                nn.Linear(28\
+          \ * 28, 512),\n                nn.ReLU(),\n                nn.Linear(512,\
+          \ 512),\n                nn.ReLU(),\n                nn.Linear(512, 10),\n\
+          \            )\n\n        def forward(self, x):\n            x = self.flatten(x)\n\
+          \            logits = self.linear_relu_stack(x)\n            return logits\n\
+          \n    def train_one_epoch(dataloader, model, loss_fn, optimizer, device):\n\
+          \        model.train()\n        last_loss = None\n        for batch, (X,\
+          \ y) in enumerate(dataloader):\n            X, y = X.to(device), y.to(device)\n\
+          \n            pred = model(X)\n            loss = loss_fn(pred, y)\n\n \
+          \           optimizer.zero_grad()\n            loss.backward()\n       \
+          \     optimizer.step()\n\n            last_loss = loss.item()\n        return\
+          \ last_loss\n\n    device = \"cuda\" if torch.cuda.is_available() else \"\
+          cpu\"\n    print(f\"[train] Using device: {device}\")\n\n    data = torch.load(train_data.path)\n\
+          \    images = data[\"images\"]\n    labels = data[\"labels\"]\n\n    dataset\
+          \ = TensorDataset(images, labels)\n\n    cpu_count = os.cpu_count() or 1\n\
+          \    num_workers = max(cpu_count - 1, 1)\n\n    train_dataloader = DataLoader(\n\
+          \        dataset,\n        batch_size=batch_size,\n        shuffle=True,\n\
+          \        num_workers=num_workers,\n        pin_memory=(device == \"cuda\"\
+          ),\n    )\n\n    model = NeuralNetwork().to(device)\n    loss_fn = nn.CrossEntropyLoss()\n\
+          \    optimizer = torch.optim.Adam(model.parameters(), lr=lr)\n\n    last_loss\
+          \ = None\n    for epoch in range(epochs):\n        last_loss = train_one_epoch(train_dataloader,\
+          \ model, loss_fn, optimizer, device)\n        print(f\"[train] Epoch {epoch\
+          \ + 1}: loss={last_loss:.4f}\")\n\n    # \u0417\u0430\u043F\u0438\u0441\
+          \ \u043D\u0430 \u043C\u043E\u0434\u0435\u043B\u0430\n    torch.save(model.state_dict(),\
+          \ model_out.path)\n    print(f\"[train] Saved model to: {model_out.path}\"\
+          )\n\n    # \u0417\u0430\u043F\u0438\u0441 \u043D\u0430 \u043C\u0435\u0442\
+          \u0440\u0438\u043A\u0438\n    train_metrics = {\n        \"epochs\": epochs,\n\
+          \        \"final_train_loss\": float(last_loss),\n        \"batch_size\"\
+          : batch_size,\n        \"learning_rate\": lr,\n        \"num_samples\":\
+          \ int(len(dataset)),\n    }\n\n    with open(train_metrics_out.path, \"\
+          w\", encoding=\"utf-8\") as f:\n        json.dump(train_metrics, f, indent=2)\n\
+          \n    print(f\"[train] Saved train metrics to: {train_metrics_out.path}\"\
+          )\n\n"
+        image: python:3.11-slim
+pipelineInfo:
+  description: MNIST-like preprocessing, training and evaluation (fast, local-friendly)
+  name: mnist-pipeline-fast-local
+root:
+  dag:
+    tasks:
+      evaluate-mnist:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-evaluate-mnist
+        dependentTasks:
+        - preprocess-mnist
+        - train-mnist
+        inputs:
+          artifacts:
+            model_in:
+              taskOutputArtifact:
+                outputArtifactKey: model_out
+                producerTask: train-mnist
+            test_data:
+              taskOutputArtifact:
+                outputArtifactKey: test_data
+                producerTask: preprocess-mnist
+          parameters:
+            batch_size:
+              componentInputParameter: batch_size
+        taskInfo:
+          name: evaluate-mnist
+      preprocess-mnist:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-preprocess-mnist
+        taskInfo:
+          name: preprocess-mnist
+      train-mnist:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-mnist
+        dependentTasks:
+        - preprocess-mnist
+        inputs:
+          artifacts:
+            train_data:
+              taskOutputArtifact:
+                outputArtifactKey: train_data
+                producerTask: preprocess-mnist
+          parameters:
+            batch_size:
+              componentInputParameter: batch_size
+            epochs:
+              componentInputParameter: epochs
+            lr:
+              componentInputParameter: lr
+        taskInfo:
+          name: train-mnist
+  inputDefinitions:
+    parameters:
+      batch_size:
+        defaultValue: 64.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      epochs:
+        defaultValue: 1.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      lr:
+        defaultValue: 0.001
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.4.0
