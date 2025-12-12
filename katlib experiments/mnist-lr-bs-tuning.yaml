@@ -1,0 +1,139 @@
+metadata:
+  name: mnist-lr-bs-tuning
+  namespace: kubeflow
+  uid: f628dced-b25f-4a9d-8cc2-2217371298ad
+  resourceVersion: '611569'
+  generation: 1
+  creationTimestamp: '2025-12-12T09:07:17Z'
+  finalizers:
+    - update-prometheus-metrics
+  managedFields:
+    - manager: katib-ui
+      operation: Update
+      apiVersion: kubeflow.org/v1beta1
+      time: '2025-12-12T09:07:17Z'
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:metadata:
+          f:finalizers:
+            .: {}
+            v:"update-prometheus-metrics": {}
+        f:spec:
+          .: {}
+          f:algorithm:
+            .: {}
+            f:algorithmName: {}
+          f:maxFailedTrialCount: {}
+          f:maxTrialCount: {}
+          f:metricsCollectorSpec:
+            .: {}
+            f:collector:
+              .: {}
+              f:kind: {}
+          f:objective:
+            .: {}
+            f:additionalMetricNames: {}
+            f:goal: {}
+            f:metricStrategies: {}
+            f:objectiveMetricName: {}
+            f:type: {}
+          f:parallelTrialCount: {}
+          f:parameters: {}
+          f:resumePolicy: {}
+          f:trialTemplate:
+            .: {}
+            f:configMap:
+              .: {}
+              f:configMapName: {}
+              f:configMapNamespace: {}
+              f:templatePath: {}
+            f:failureCondition: {}
+            f:primaryContainerName: {}
+            f:successCondition: {}
+            f:trialParameters: {}
+    - manager: katib-controller
+      operation: Update
+      apiVersion: kubeflow.org/v1beta1
+      time: '2025-12-12T09:07:30Z'
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:status:
+          .: {}
+          f:conditions: {}
+          f:currentOptimalTrial:
+            .: {}
+            f:observation: {}
+          f:runningTrialList: {}
+          f:startTime: {}
+          f:trials: {}
+          f:trialsRunning: {}
+      subresource: status
+spec:
+  parameters:
+    - name: learningRate
+      parameterType: double
+      feasibleSpace:
+        max: '0.01'
+        min: '0.0001'
+        distribution: uniform
+    - name: batchSize
+      parameterType: int
+      feasibleSpace:
+        max: '128'
+        min: '16'
+        distribution: uniform
+  objective:
+    type: maximize
+    goal: 0.98
+    objectiveMetricName: accuracy
+    additionalMetricNames:
+      - Train-accuracy
+    metricStrategies:
+      - name: accuracy
+        value: max
+      - name: Train-accuracy
+        value: max
+  algorithm:
+    algorithmName: random
+  trialTemplate:
+    configMap:
+      configMapName: trial-templates
+      configMapNamespace: kubeflow
+      templatePath: defaultTrialTemplate.yaml
+    trialParameters:
+      - name: learningRate
+        reference: learningRate
+      - name: momentum
+        reference: batchSize
+    primaryContainerName: mnist-trial
+    successCondition: status.conditions.#(type=="Complete")#|#(status=="True")#
+    failureCondition: status.conditions.#(type=="Failed")#|#(status=="True")#
+  parallelTrialCount: 2
+  maxTrialCount: 10
+  maxFailedTrialCount: 3
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+  resumePolicy: Never
+status:
+  startTime: '2025-12-12T09:07:17Z'
+  conditions:
+    - type: Created
+      status: 'True'
+      reason: ExperimentCreated
+      message: Experiment is created
+      lastUpdateTime: '2025-12-12T09:07:17Z'
+      lastTransitionTime: '2025-12-12T09:07:17Z'
+    - type: Running
+      status: 'True'
+      reason: ExperimentRunning
+      message: Experiment is running
+      lastUpdateTime: '2025-12-12T09:07:30Z'
+      lastTransitionTime: '2025-12-12T09:07:30Z'
+  currentOptimalTrial:
+    observation: {}
+  runningTrialList:
+    - mnist-lr-bs-tuning-4jrbqwmn
+    - mnist-lr-bs-tuning-d8gwsnlp
+  trials: 2
+  trialsRunning: 2

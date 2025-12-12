@@ -1,0 +1,200 @@
+metadata:
+  name: mnist-lr-batchsize
+  namespace: kubeflow
+  uid: 4946a2ab-5ab3-4b73-8e9f-56e1c3324a6f
+  resourceVersion: '602870'
+  generation: 1
+  creationTimestamp: '2025-12-11T13:25:52Z'
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: >
+      {"apiVersion":"kubeflow.org/v1beta1","kind":"Experiment","metadata":{"annotations":{},"name":"mnist-lr-batchsize","namespace":"kubeflow"},"spec":{"algorithm":{"algorithmName":"random"},"maxFailedTrialCount":3,"maxTrialCount":12,"objective":{"goal":0.01,"objectiveMetricName":"loss","type":"minimize"},"parallelTrialCount":3,"parameters":[{"feasibleSpace":{"max":"0.05","min":"0.01"},"name":"lr","parameterType":"double"},{"feasibleSpace":{"max":"64","min":"8"},"name":"batch_size","parameterType":"int"}],"trialTemplate":{"primaryContainerName":"training-container","trialParameters":[{"description":"Learning
+      rate for the training
+      model","name":"learningRate","reference":"lr"},{"description":"Batch size
+      for the training
+      model","name":"batchSize","reference":"batch_size"}],"trialSpec":{"apiVersion":"batch/v1","kind":"Job","spec":{"template":{"spec":{"containers":[{"command":["python3","/opt/pytorch-mnist/mnist.py","--epochs=1","--lr=${trialParameters.learningRate}","--batch-size=${trialParameters.batchSize}"],"image":"ghcr.io/kubeflow/katib/pytorch-mnist-cpu:latest","name":"training-container","resources":{"limits":{"cpu":"0.5","memory":"1Gi"}}}],"restartPolicy":"Never"}}}}}}}
+  finalizers:
+    - update-prometheus-metrics
+  managedFields:
+    - manager: katib-controller
+      operation: Update
+      apiVersion: kubeflow.org/v1beta1
+      time: '2025-12-11T13:25:52Z'
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:metadata:
+          f:finalizers:
+            .: {}
+            v:"update-prometheus-metrics": {}
+    - manager: kubectl-client-side-apply
+      operation: Update
+      apiVersion: kubeflow.org/v1beta1
+      time: '2025-12-11T13:25:52Z'
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:metadata:
+          f:annotations:
+            .: {}
+            f:kubectl.kubernetes.io/last-applied-configuration: {}
+        f:spec:
+          .: {}
+          f:algorithm:
+            .: {}
+            f:algorithmName: {}
+          f:maxFailedTrialCount: {}
+          f:maxTrialCount: {}
+          f:objective:
+            .: {}
+            f:goal: {}
+            f:objectiveMetricName: {}
+            f:type: {}
+          f:parallelTrialCount: {}
+          f:parameters: {}
+          f:trialTemplate:
+            .: {}
+            f:primaryContainerName: {}
+            f:trialParameters: {}
+            f:trialSpec:
+              .: {}
+              f:apiVersion: {}
+              f:kind: {}
+              f:spec:
+                .: {}
+                f:template:
+                  .: {}
+                  f:spec:
+                    .: {}
+                    f:containers: {}
+                    f:restartPolicy: {}
+    - manager: katib-controller
+      operation: Update
+      apiVersion: kubeflow.org/v1beta1
+      time: '2025-12-11T15:21:15Z'
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:status:
+          .: {}
+          f:completionTime: {}
+          f:conditions: {}
+          f:currentOptimalTrial:
+            .: {}
+            f:bestTrialName: {}
+            f:observation:
+              .: {}
+              f:metrics: {}
+            f:parameterAssignments: {}
+          f:startTime: {}
+          f:succeededTrialList: {}
+          f:trials: {}
+          f:trialsSucceeded: {}
+      subresource: status
+spec:
+  parameters:
+    - name: lr
+      parameterType: double
+      feasibleSpace:
+        max: '0.05'
+        min: '0.01'
+        distribution: uniform
+    - name: batch_size
+      parameterType: int
+      feasibleSpace:
+        max: '64'
+        min: '8'
+        distribution: uniform
+  objective:
+    type: minimize
+    goal: 0.01
+    objectiveMetricName: loss
+    metricStrategies:
+      - name: loss
+        value: min
+  algorithm:
+    algorithmName: random
+  trialTemplate:
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        template:
+          spec:
+            containers:
+              - command:
+                  - python3
+                  - /opt/pytorch-mnist/mnist.py
+                  - '--epochs=1'
+                  - '--lr=${trialParameters.learningRate}'
+                  - '--batch-size=${trialParameters.batchSize}'
+                image: ghcr.io/kubeflow/katib/pytorch-mnist-cpu:latest
+                name: training-container
+                resources:
+                  limits:
+                    cpu: '0.5'
+                    memory: 1Gi
+            restartPolicy: Never
+    trialParameters:
+      - name: learningRate
+        description: Learning rate for the training model
+        reference: lr
+      - name: batchSize
+        description: Batch size for the training model
+        reference: batch_size
+    primaryContainerName: training-container
+    successCondition: status.conditions.#(type=="Complete")#|#(status=="True")#
+    failureCondition: status.conditions.#(type=="Failed")#|#(status=="True")#
+  parallelTrialCount: 3
+  maxTrialCount: 12
+  maxFailedTrialCount: 3
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+  resumePolicy: Never
+status:
+  startTime: '2025-12-11T13:25:52Z'
+  completionTime: '2025-12-11T15:21:15Z'
+  conditions:
+    - type: Created
+      status: 'True'
+      reason: ExperimentCreated
+      message: Experiment is created
+      lastUpdateTime: '2025-12-11T13:25:52Z'
+      lastTransitionTime: '2025-12-11T13:25:52Z'
+    - type: Running
+      status: 'False'
+      reason: ExperimentRunning
+      message: Experiment is running
+      lastUpdateTime: '2025-12-11T15:21:15Z'
+      lastTransitionTime: '2025-12-11T15:21:15Z'
+    - type: Succeeded
+      status: 'True'
+      reason: ExperimentMaxTrialsReached
+      message: Experiment has succeeded because max trial count has reached
+      lastUpdateTime: '2025-12-11T15:21:15Z'
+      lastTransitionTime: '2025-12-11T15:21:15Z'
+  currentOptimalTrial:
+    bestTrialName: mnist-lr-batchsize-hrvc9m5w
+    parameterAssignments:
+      - name: lr
+        value: '0.03001292610135134'
+      - name: batch_size
+        value: '16'
+    observation:
+      metrics:
+        - name: loss
+          min: '0.0545'
+          max: '2.3022'
+          latest: '0.2924'
+  succeededTrialList:
+    - mnist-lr-batchsize-vxk9twwf
+    - mnist-lr-batchsize-pz6s227t
+    - mnist-lr-batchsize-n2lmw2f6
+    - mnist-lr-batchsize-27v442cw
+    - mnist-lr-batchsize-vcn7l7gm
+    - mnist-lr-batchsize-522kgh7n
+    - mnist-lr-batchsize-kvh6vzsh
+    - mnist-lr-batchsize-cz4k854d
+    - mnist-lr-batchsize-hrvc9m5w
+    - mnist-lr-batchsize-5x928kbn
+    - mnist-lr-batchsize-4kbrbgw6
+    - mnist-lr-batchsize-gzzv8cvj
+  trials: 12
+  trialsSucceeded: 12

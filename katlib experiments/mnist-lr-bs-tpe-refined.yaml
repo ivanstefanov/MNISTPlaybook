@@ -1,0 +1,148 @@
+metadata:
+  name: mnist-lr-bs-tpe-refined
+  namespace: kubeflow
+  uid: 6df0153a-84c0-4a53-a200-8bb0bfc15622
+  resourceVersion: '607092'
+  generation: 1
+  creationTimestamp: '2025-12-11T16:49:40Z'
+  finalizers:
+    - update-prometheus-metrics
+  managedFields:
+    - manager: katib-controller
+      operation: Update
+      apiVersion: kubeflow.org/v1beta1
+      time: '2025-12-11T16:49:40Z'
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:metadata:
+          f:finalizers:
+            .: {}
+            v:"update-prometheus-metrics": {}
+    - manager: katib-ui
+      operation: Update
+      apiVersion: kubeflow.org/v1beta1
+      time: '2025-12-11T16:49:40Z'
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:spec:
+          .: {}
+          f:algorithm:
+            .: {}
+            f:algorithmName: {}
+          f:maxFailedTrialCount: {}
+          f:maxTrialCount: {}
+          f:metricsCollectorSpec:
+            .: {}
+            f:collector:
+              .: {}
+              f:kind: {}
+          f:objective:
+            .: {}
+            f:additionalMetricNames: {}
+            f:goal: {}
+            f:objectiveMetricName: {}
+            f:type: {}
+          f:parallelTrialCount: {}
+          f:parameters: {}
+          f:resumePolicy: {}
+          f:trialTemplate:
+            .: {}
+            f:configMap:
+              .: {}
+              f:configMapName: {}
+              f:configMapNamespace: {}
+              f:templatePath: {}
+            f:failureCondition: {}
+            f:primaryContainerName: {}
+            f:successCondition: {}
+            f:trialParameters: {}
+    - manager: katib-controller
+      operation: Update
+      apiVersion: kubeflow.org/v1beta1
+      time: '2025-12-11T16:49:54Z'
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:status:
+          .: {}
+          f:conditions: {}
+          f:currentOptimalTrial:
+            .: {}
+            f:observation: {}
+          f:runningTrialList: {}
+          f:startTime: {}
+          f:trials: {}
+          f:trialsRunning: {}
+      subresource: status
+spec:
+  parameters:
+    - name: learningRate
+      parameterType: double
+      feasibleSpace:
+        max: '0.02'
+        min: '0.001'
+        distribution: uniform
+    - name: batchSize
+      parameterType: int
+      feasibleSpace:
+        max: '32'
+        min: '8'
+        distribution: uniform
+  objective:
+    type: maximize
+    goal: 0.985
+    objectiveMetricName: accuracy
+    additionalMetricNames:
+      - Train-accuracy
+      - loss
+    metricStrategies:
+      - name: accuracy
+        value: max
+      - name: Train-accuracy
+        value: max
+      - name: loss
+        value: max
+  algorithm:
+    algorithmName: tpe
+  trialTemplate:
+    configMap:
+      configMapName: trial-templates
+      configMapNamespace: kubeflow
+      templatePath: defaultTrialTemplate.yaml
+    trialParameters:
+      - name: learningRate
+        reference: learningRate
+      - name: momentum
+        reference: batchSize
+    primaryContainerName: mnist-trial
+    successCondition: status.conditions.#(type=="Complete")#|#(status=="True")#
+    failureCondition: status.conditions.#(type=="Failed")#|#(status=="True")#
+  parallelTrialCount: 3
+  maxTrialCount: 20
+  maxFailedTrialCount: 3
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+  resumePolicy: Never
+status:
+  startTime: '2025-12-11T16:49:40Z'
+  conditions:
+    - type: Created
+      status: 'True'
+      reason: ExperimentCreated
+      message: Experiment is created
+      lastUpdateTime: '2025-12-11T16:49:40Z'
+      lastTransitionTime: '2025-12-11T16:49:40Z'
+    - type: Running
+      status: 'True'
+      reason: ExperimentRunning
+      message: Experiment is running
+      lastUpdateTime: '2025-12-11T16:49:53Z'
+      lastTransitionTime: '2025-12-11T16:49:53Z'
+  currentOptimalTrial:
+    observation: {}
+  runningTrialList:
+    - mnist-lr-bs-tpe-refined-7rv48rmf
+    - mnist-lr-bs-tpe-refined-h65hqlrm
+    - mnist-lr-bs-tpe-refined-wnpvkxnx
+  trials: 3
+  trialsRunning: 3

@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kubeflow-ingress
+  namespace: kubeflow
+  annotations:
+    kubernetes.io/ingress.class: public
+spec:
+  rules:
+    - http:
+        paths:
+          # Katib UI на /katib/  (по-специфичен път – първи)
+          - path: /katib/
+            pathType: Prefix
+            backend:
+              service:
+                name: katib-ui
+                port:
+                  number: 80
+          # Kubeflow Pipelines UI на root /
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ml-pipeline-ui
+                port:
+                  number: 80
+
+# 1. Създай нов kubeflow-ingress.yaml
+# cd ~
+# nano kubeflow-ingress.yaml
+# 2. Сложи вътре това съдържание:....
+# 3. Приложи новия Ingress и провери
+# microk8s kubectl apply -f kubeflow-ingress.yaml
+# microk8s kubectl get ingress -n kubeflow
+# 4. Вземи IP адреса на Ubuntu
+# ip addr show eth0 | grep 'inet '
+#  В Уондоус зареди нещо подобно на http://172.18.123.127/

@@ -40,6 +40,24 @@
 2. Run ```python <path_and_name_of_python_file>.py``` Example: `python pipelines/simple_pipeline.py`
 3. If you have errors, most of the time, install whatever is needed into the virtual environment
 
+# Ingress
+In order to run the multiple modules, ingres should be enabled by `microk8s enable ingress`. Then in the root directory, the ingres configuration should be created. You may copy `/ingess/kubeflow-ingress.yaml` file. The configuration is applied by calling `microk8s kubectl apply -f kubeflow-ingress.yaml`
+ - check if ingres is working
+```
+  microk8s kubectl get pods -n ingress
+  microk8s kubectl get ingress -n kubeflow
+```
+ - `microk8s kubectl get svc -n kubeflow` - check the service names (in order to edit kubeflow-ingress.yaml if needed )
+ - `ip addr show eth0 | grep 'inet '` - get the ip address to be called from windows browser in order to load kubeflow and ingress
+
+# katib
+- Get the url using the command from above and open it something like: http://172.18.123.127/katib/
+- Can create a new experiment by directly uploading the yaml file
+- Check for running trials: `microk8s kubectl get trials -n kubeflow`
+- Wait for the trials to finish successfully in order to analyze the results. The more yellow lines are better.
+
+
+
 # Usefull commands in WSL
  - Install ubunti in WSL - `wsl --install -d Ubuntu`
  - Start ubuntu - `wsl -d Ubuntu`
