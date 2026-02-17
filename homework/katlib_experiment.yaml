@@ -1,0 +1,116 @@
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: mlops-katib
+  namespace: kubeflow-user-example-com
+spec:
+  objective:
+    type: maximize
+    goal: 0.95
+    objectiveMetricName: accuracy
+  algorithm:
+    algorithmName: random
+  parallelTrialCount: 2
+  maxTrialCount: 12
+  maxFailedTrialCount: 3
+
+  parameters:
+    - name: lr
+      parameterType: double
+      feasibleSpace:
+        min: "0.0005"
+        max: "0.05"
+    - name: epochs
+      parameterType: int
+      feasibleSpace:
+        min: "10"
+        max: "80"
+
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+    source:
+      filter:
+        metricsFormat:
+          - "accuracy=([0-9.]+)"
+
+  trialTemplate:
+    primaryContainerName: training-container
+    trialParameters:
+      - name: lr
+        description: Learning rate
+        reference: lr
+      - name: epochs
+        description: Epochs
+        reference: epochs
+
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        backoffLimit: 0
+        template:
+          spec:
+            restartPolicy: Never
+            containers:
+              - name: training-container
+                image: python:3.10
+                command:
+                  - bash
+                  - -lc
+                  - |
+                    set -e
+                    pip install -q numpy==1.26.4 scikit-learn==1.4.2
+                    python - <<'PY'
+                    import os, sys, subprocess
+                    os.environ["PIP_DISABLE_PIP_VERSION_CHECK"]="1"
+                    subprocess.check_call([
+                        sys.executable, "-m", "pip", "install", "-q",
+                        "torch==2.1.2+cpu",
+                        "--extra-index-url", "https://download.pytorch.org/whl/cpu"
+                    ])
+
+                    import numpy as np
+                    import torch
+                    import torch.nn as nn
+                    from sklearn.model_selection import train_test_split
+
+                    lr = float("${trialParameters.lr}")
+                    epochs = int("${trialParameters.epochs}")
+
+                    rng = np.random.default_rng(42)
+                    X = rng.random((2000, 10), dtype=np.float32)
+                    y = (X.sum(axis=1) > 5).astype(np.int64)
+
+                    Xtr, Xva, ytr, yva = train_test_split(
+                        X, y, test_size=0.2, random_state=42, stratify=y
+                    )
+
+                    Xtr = torch.tensor(Xtr, dtype=torch.float32)
+                    ytr = torch.tensor(ytr, dtype=torch.long)
+                    Xva = torch.tensor(Xva, dtype=torch.float32)
+                    yva = torch.tensor(yva, dtype=torch.long)
+
+                    net = nn.Sequential(
+                        nn.Linear(10, 32),
+                        nn.ReLU(),
+                        nn.Linear(32, 2),
+                    )
+                    opt = torch.optim.Adam(net.parameters(), lr=lr)
+                    loss_fn = nn.CrossEntropyLoss()
+
+                    net.train()
+                    for _ in range(epochs):
+                        opt.zero_grad()
+                        logits = net(Xtr)
+                        loss = loss_fn(logits, ytr)
+                        loss.backward()
+                        opt.step()
+
+                    net.eval()
+                    with torch.no_grad():
+                        preds = torch.argmax(net(Xva), dim=1)
+
+                    acc = (preds == yva).float().mean().item()
+                    print(f"accuracy={acc}")
+                    PY
