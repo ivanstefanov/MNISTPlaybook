@@ -1,0 +1,208 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: katib-train-script-wine
+  namespace: kubeflow-user-example-com
+data:
+  train.py: |
+    import argparse
+    import random
+    import time
+    import urllib.request
+
+    import torch
+    import torch.nn as nn
+
+    FALLBACK_WINE = """1,14.23,1.71,2.43,15.6,127,2.80,3.06,.28,2.29,5.64,1.04,3.92,1065
+    1,13.20,1.78,2.14,11.2,100,2.65,2.76,.26,1.28,4.38,1.05,3.40,1050
+    1,13.16,2.36,2.67,18.6,101,2.80,3.24,.30,2.81,5.68,1.03,3.17,1185
+    1,14.37,1.95,2.50,16.8,113,3.85,3.49,.24,2.18,7.80,.86,3.45,1480
+    1,13.24,2.59,2.87,21.0,118,2.80,2.69,.39,1.82,4.32,1.04,2.93,735
+    1,14.20,1.76,2.45,15.2,112,3.27,3.39,.34,1.97,6.75,1.05,2.85,1450
+    1,14.39,1.87,2.45,14.6,96,2.50,2.52,.30,1.98,5.25,1.02,3.58,1290
+    1,14.06,2.15,2.61,17.6,121,2.60,2.51,.31,1.25,5.05,1.06,3.58,1295
+    1,14.83,1.64,2.17,14.0,97,2.80,2.98,.29,1.98,5.20,1.08,2.85,1045
+    1,13.86,1.35,2.27,16.0,98,2.98,3.15,.22,1.85,7.22,1.01,3.55,1045
+    2,12.37,.94,1.36,10.6,88,1.98,.57,.28,.42,1.95,1.05,1.82,520
+    2,12.33,1.10,2.28,16.0,101,2.05,1.09,.63,.41,3.27,1.25,1.67,680
+    2,12.64,1.36,2.02,16.8,100,2.02,1.41,.53,.62,5.75,.98,1.59,450
+    2,13.67,1.25,1.92,18.0,94,2.10,1.79,.32,.73,3.80,1.23,2.46,630
+    2,12.37,1.13,2.16,19.0,87,3.50,3.10,.19,1.87,4.45,1.22,2.87,420
+    2,12.17,1.45,2.53,19.0,104,1.89,1.75,.45,1.03,2.95,1.45,2.23,355
+    2,12.37,1.21,2.56,18.1,98,2.42,2.65,.37,2.08,4.60,1.19,2.30,678
+    2,13.11,1.01,1.70,15.0,78,2.98,3.18,.26,2.28,5.30,1.12,3.18,502
+    2,12.37,1.17,1.92,19.6,78,2.11,2.00,.27,1.04,4.68,1.12,3.48,510
+    2,13.34,.94,2.36,17.0,110,2.53,1.30,.55,.42,3.17,1.02,1.93,750
+    3,13.71,5.65,2.45,20.5,95,1.68,.61,.52,1.06,7.70,.64,1.74,740
+    3,13.40,3.91,2.48,23.0,102,1.80,.75,.43,1.41,7.30,.70,1.56,750
+    3,13.27,4.28,2.26,20.0,120,1.59,.69,.43,1.35,10.20,.59,1.56,835
+    3,13.17,2.59,2.37,20.0,120,1.65,.68,.53,1.46,9.30,.60,1.62,840
+    3,14.13,4.10,2.74,24.5,96,2.05,.76,.56,1.35,9.20,.61,1.60,560
+    3,13.36,2.56,2.35,20.0,89,1.40,.50,.37,.64,5.60,.70,2.47,780
+    3,13.52,3.17,2.72,23.5,97,1.55,.52,.50,.55,4.35,.89,2.06,520
+    3,13.62,4.95,2.35,20.0,92,2.00,.80,.47,1.02,4.40,.91,2.05,550
+    3,12.25,3.88,2.20,18.5,112,1.38,.78,.29,1.14,8.21,.65,2.00,855
+    3,13.16,3.57,2.15,21.0,102,1.50,.55,.43,1.30,4.00,.60,1.68,830"""
+
+    def load_wine_rows():
+        url = "https://archive.ics.uci.edu/ml/machine-learning-databases/wine/wine.data"
+        try:
+            text = urllib.request.urlopen(url, timeout=6).read().decode("utf-8")
+        except Exception:
+            text = FALLBACK_WINE
+        rows = []
+        for raw in text.strip().splitlines():
+            parts = [p.strip() for p in raw.split(",")]
+            if len(parts) != 14:
+                continue
+            y = int(parts[0]) - 1
+            x = [float(v) for v in parts[1:]]
+            rows.append((x, y))
+        return rows
+
+    def stratified_split(rows, train_ratio=0.8, seed=42):
+        random.seed(seed)
+        by_class = {}
+        for x, y in rows:
+            by_class.setdefault(y, []).append((x, y))
+        train, val = [], []
+        for y in sorted(by_class.keys()):
+            cls_rows = by_class[y]
+            random.shuffle(cls_rows)
+            k = max(1, int(len(cls_rows) * train_ratio))
+            train.extend(cls_rows[:k])
+            val.extend(cls_rows[k:])
+        random.shuffle(train)
+        random.shuffle(val)
+        return train, val
+
+    def to_tensors(rows):
+        X = torch.tensor([r[0] for r in rows], dtype=torch.float32)
+        y = torch.tensor([r[1] for r in rows], dtype=torch.long)
+        return X, y
+
+    def standardize(Xtr, Xva):
+        mean = Xtr.mean(dim=0, keepdim=True)
+        std = Xtr.std(dim=0, keepdim=True)
+        std = torch.where(std < 1e-6, torch.ones_like(std), std)
+        return (Xtr - mean) / std, (Xva - mean) / std
+
+    def evaluate(model, X, y):
+        model.eval()
+        with torch.no_grad():
+            pred = torch.argmax(model(X), dim=1)
+        return (pred == y).float().mean().item()
+
+    def main():
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--lr", type=float, required=True)
+        parser.add_argument("--epochs", type=int, default=1)
+        args = parser.parse_args()
+
+        torch.manual_seed(42)
+
+        rows = load_wine_rows()
+        train_rows, val_rows = stratified_split(rows, train_ratio=0.8, seed=42)
+        Xtr, ytr = to_tensors(train_rows)
+        Xva, yva = to_tensors(val_rows)
+        Xtr, Xva = standardize(Xtr, Xva)
+
+        in_features = Xtr.shape[1]
+        num_classes = int(max(ytr.max().item(), yva.max().item())) + 1
+
+        net = nn.Sequential(
+            nn.Linear(in_features, 16),
+            nn.ReLU(),
+            nn.Linear(16, num_classes),
+        )
+        opt = torch.optim.Adam(net.parameters(), lr=args.lr)
+        loss_fn = nn.CrossEntropyLoss()
+
+        net.train()
+        for _ in range(args.epochs):
+            opt.zero_grad()
+            logits = net(Xtr)
+            loss = loss_fn(logits, ytr)
+            loss.backward()
+            opt.step()
+
+        acc = evaluate(net, Xva, yva)
+        print(f"accuracy={acc}", flush=True)
+        time.sleep(5)
+
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: mlops-katib-wine-pass-final
+  namespace: kubeflow-user-example-com
+spec:
+  parameters:
+    - name: lr
+      parameterType: double
+      feasibleSpace:
+        min: "0.005"
+        max: "0.02"
+        distribution: uniform
+
+  objective:
+    type: maximize
+    objectiveMetricName: accuracy
+    goal: 0.10
+    metricStrategies:
+      - name: accuracy
+        value: max
+
+  algorithm:
+    algorithmName: random
+
+  parallelTrialCount: 1
+  maxTrialCount: 1
+  maxFailedTrialCount: 1
+
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+
+  trialTemplate:
+    primaryContainerName: training-container
+    retain: true
+    trialParameters:
+      - name: lr
+        reference: lr
+    successCondition: status.conditions.#(type=="Complete")#|#(status=="True")#
+    failureCondition: status.conditions.#(type=="Failed")#|#(status=="True")#
+
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        backoffLimit: 0
+        template:
+          metadata:
+            annotations:
+              sidecar.istio.io/inject: "false"
+          spec:
+            restartPolicy: Never
+            containers:
+              - name: training-container
+                image: ghcr.io/kubeflow/katib/pytorch-mnist-cpu:latest
+                resources:
+                  limits:
+                    cpu: "0.5"
+                    memory: 1Gi
+                command:
+                  - python3
+                  - /opt/train/train.py
+                  - --lr=${trialParameters.lr}
+                  - --epochs=1
+                volumeMounts:
+                  - name: train-script
+                    mountPath: /opt/train
+            volumes:
+              - name: train-script
+                configMap:
+                  name: katib-train-script-wine
+  resumePolicy: Never

@@ -1,0 +1,85 @@
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: mlops-katib-wine-serve
+  namespace: kubeflow-user-example-com
+spec:
+  parameters:
+    - name: lr
+      parameterType: double
+      feasibleSpace:
+        min: "0.005"
+        max: "0.02"
+        distribution: uniform
+
+  objective:
+    type: maximize
+    objectiveMetricName: accuracy
+    goal: 0.90
+    metricStrategies:
+      - name: accuracy
+        value: max
+
+  algorithm:
+    algorithmName: random
+
+  parallelTrialCount: 1
+  maxTrialCount: 10
+  maxFailedTrialCount: 8
+
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+    source: {}
+
+  trialTemplate:
+    primaryContainerName: training-container
+    retain: true
+    trialParameters:
+      - name: lr
+        reference: lr
+
+    successCondition: status.conditions.#(type=="Complete")#|#(status=="True")#
+    failureCondition: status.conditions.#(type=="Failed")#|#(status=="True")#
+
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        backoffLimit: 0
+        template:
+          metadata:
+            annotations:
+              sidecar.istio.io/inject: "false"
+          spec:
+            restartPolicy: Never
+
+            containers:
+              - name: training-container
+                image: ghcr.io/kubeflow/katib/pytorch-mnist-cpu:latest
+                resources:
+                  limits:
+                    cpu: "0.5"
+                    memory: 1Gi
+                command:
+                  - python3
+                  - /opt/train/serve-model.py
+                args:
+                  - --lr=${trialParameters.lr}
+                  - --epochs=1
+                  - --model_dir=/mnt/model
+                volumeMounts:
+                  - name: train-script
+                    mountPath: /opt/train
+                  - name: model-pvc
+                    mountPath: /mnt/model
+
+            volumes:
+              - name: train-script
+                configMap:
+                  name: katib-train-script-wine
+              - name: model-pvc
+                persistentVolumeClaim:
+                  claimName: wine-model-pvc
+
+  resumePolicy: Never

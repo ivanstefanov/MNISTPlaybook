@@ -346,7 +346,7 @@ accuracy
 
 ---
 
-# 🧠 Важно: Katib не стартира pipeline
+# Katib tuning през UI
 
 Katib стартира **Kubernetes Job**, не KFP pipeline.
 
@@ -360,7 +360,10 @@ Katib стартира **Kubernetes Job**, не KFP pipeline.
 
 # ✅ Стъпка 1 – Създай katib_train.py
 
-В Notebook създай файл `katib_train.py` (текста е запазен в тази директория)
+В Notebook създай файл `katlib experiment\katib_train.py` (текста е запазен в тази директория).
+-Реалният training код е в: `katib-wine-train-configmap.yaml`. Вътре e  `data.train.py`
+- Експериментът `katib-wine-experiment.yaml` само стартира този код чрез:
+  - python3 `/opt/train/train.py`, като `train.py` идва от ConfigMap katib-train-script-wine (mount-нат в /opt/train).
 
 
 Провери локално:
@@ -368,16 +371,17 @@ Katib стартира **Kubernetes Job**, не KFP pipeline.
 ```bash
 python katib_train.py --lr 0.01 --epochs 30
 ```
+*Може да се наложи да инсталираш torch чрез*
+```sh
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+```
 
-Трябва да видиш:
-```
-accuracy=0.9...
-```
+Трябва да видиш: `accuracy=0.9...`
 ---
 
 # 🚀 Стъпка 2 – Създай Katib Experiment (UI)
 
-UI → **Katib Experiments** → **New ExperimДолу натисни да редактираш YAML-a и paste съдържанието на `katlib_experiment.yaml`
+UI → **Katib Experiments** → **New ExperimДолу натисни да редактираш YAML-a и paste съдържанието на `katlib experiment\katib-wine-experiment.yaml`
 ## Как да го приложиш през UI
 
 1. Katib Experiments → Create Experiment (или създай празен и после Edit YAML)
@@ -390,3 +394,352 @@ UI → **Katib Experiments** → **New ExperimДолу натисни да ре�
 1. В Katib experiment-а трябва да се появят trials
 2. В trials ще има Jobs в namespace kubeflow-user-example-com
 3. След 1–2 trial-а трябва да видиш accuracy отчетено
+
+# Алтернатива на стъпка 2 (при мен имаше проблеми с кода който генерираше ymml с конфигурация и питон код на трейнинга)
+1. Нужни файлове:
+- `katib-wine-train-configmap.yaml`
+- `katib-wine-experiment.yaml`
+
+2. Можеш да ги качиш през JupyterLab:
+- Upload в File Browser
+- или copy/paste съдържанието и Save As в .yaml файл
+ Не е нужно „физическо“ копиране извън Jupyter, ако имаш terminal в notebook pod-а.
+
+3. В Jupyter terminal (или друг shell с kubectl достъп) пусни:
+```sh
+kubectl apply -f katib-wine-train-configmap.yaml
+kubectl apply -f katib-wine-experiment.yaml
+```
+
+4. Провери:
+```sh
+kubectl -n kubeflow-user-example-com get experiment mlops-katib-wine-pass-final -o wide
+kubectl -n kubeflow-user-example-com get trials -l katib.kubeflow.org/experiment=mlops-katib-wine-pass-final -o wide
+```
+
+5. Ако namespace е различен:
+
+- смени metadata.namespace и в двата файла с твоя namespace
+- после пак kubectl apply -f ...
+
+6. Ако вече има експеримент със същото име:
+```sh
+kubectl -n kubeflow-user-example-com delete experiment mlops-katib-wine-pass-final
+kubectl apply -f katib-wine-experiment.yaml
+```
+
+
+## Команди проверяващи какви се случва и защо не работи:
+Reason: Do you want me to inspect the live Katib experiment spec and status for the failing run?
+```sh
+kubectl -n kubeflow-user-example-com get experiment katib-wine-pytorch-realworld -o yaml
+```
+
+- Виж подовете
+```sh
+kubectl -n kubeflow-user-example-com get pods
+```
+- Виж лог за конкретен под
+```sh
+kubectl -n kubeflow-user-example-com logs <POD_NAME> -c training-container
+```
+- Get information about trials (може и без exp name)
+```sh
+kubectl -n kubeflow-user-example-com get trials | <exp name>
+```
+- статус на експеримент
+```sh
+kubectl -n kubeflow-user-example-com describe experiment mlops-katib-v8
+```
+- вземи имената на триаловете
+```sh
+kubectl -n kubeflow-user-example-com get trials -o name
+```
+
+вземи триал инфо
+```sh
+kubectl -n kubeflow-user-example-com describe trial <trial-name>
+```
+
+- Изтриване на експеримент
+```sh
+kubectl delete experiment <exp name> -n kubeflow-user-example-com`
+```
+
+1. За да активирам изпозлването на файлове за да чета входа/изхода
+```sh
+kubectl label namespace kubeflow-user-example-com \
+  katib.kubeflow.org/metrics-collector-injection=enabled \
+  --overwrite
+```
+2. Ако искаш първо да провериш името на namespace-а:
+```sh
+kubectl get ns | grep kubeflow
+```
+
+3. След това провери дали label-ът е приложен:
+```sh
+kubectl get ns kubeflow-user-example-com --show-labels
+```
+Трябва да видиш нещо подобно: `katib.kubeflow.org/metrics-collector-injection=enabled`
+
+# KServe модела
+## Модифицирай трейнинга си така че да пише модел
+
+## Създай “стабилно място” (PVC) през UI
+   1. Влез в Kubeflow UI и избери твоя namespace (напр. kubeflow-user-example-com).
+   2. Отиди на Volumes (понякога е “PVCs” или “Persistent Volumes” според UI).
+   3. Натисни New Volume / Create Volume:
+      1. Name: wine-model-pvc
+      2. Size: 1Gi (стига)
+      3. Access mode: ако има избор, избери ReadWriteOnce
+   4. Create.
+
+Това PVC е “дискът”, който ще пази модела устойчиво.
+
+## Създаване на експеримент, който чете от трейнинг модел и пише в PVC
+Необходимите файлове се намират в serve директорията.
+- Конфиг мапа е `/.serve/katib-wine-serve-experiment.yaml`.
+- Трейнинга е `./serve/serve-model.py`
+
+Ето точните стъпки, така че **твоят Experiment YAML** (който очаква `/opt/train/serve-model.py` от ConfigMap `katib-train-script-wine`) наистина да има достъп до `serve-model.py`.
+
+## Стъпка 1: Сложи `serve-model.py` в Jupyter Notebook-а `adult-income`
+
+В Kubeflow UI:
+1. **Notebooks →** отвори `adult-income`.
+2. В JupyterLab:
+   * качи файла `serve-model.py` в root-а (например `/home/jovyan/serve-model.py`), или го създай като нов файл и постави съдържанието.
+
+## Стъпка 2: Отвори Terminal в същия notebook
+В JupyterLab:
+1. **File → New → Terminal** (или Launcher → Terminal)
+
+## Стъпка 3: Провери, че файлът е на място
+В Terminal:
+```bash
+ls -la ./serve-model.py
+```
+
+Трябва да го виждаш в текущата директория. Ако не е там, отиди където е:
+```bash
+cd /home/jovyan
+ls -la serve-model.py
+```
+(Пътят може да е различен, но най-често е `/home/jovyan`.)
+
+## Стъпка 4: Създай/обнови ConfigMap-а, който Experiment-ът монтира
+Твоят YAML казва:
+```yaml
+volumes:
+  - name: train-script
+    configMap:
+      name: katib-train-script-wine
+```
+
+Значи **трябва** да има ConfigMap с име `katib-train-script-wine` в namespace `kubeflow-user-example-com`, съдържащ ключ `serve-model.py`.
+В Terminal изпълни:
+
+```bash
+# 1) Изтрий старата версия (ако има)
+kubectl -n kubeflow-user-example-com delete configmap katib-train-script-wine --ignore-not-found=true
+
+# 2) Създай нова от файла serve-model.py
+kubectl -n kubeflow-user-example-com create configmap katib-train-script-wine \
+  --from-file=serve-model.py=./serve-model.py
+```
+
+Важно: `--from-file=serve-model.py=./serve-model.py` гарантира, че **ключът вътре в ConfigMap-а** ще се казва `serve-model.py` (точно както Trial-ът ще го вижда под `/opt/train/serve-model.py`).
+
+## Стъпка 5: Провери, че ConfigMap-ът е правилен
+
+```bash
+kubectl -n kubeflow-user-example-com get configmap katib-train-script-wine
+```
+
+После провери дали ключът е вътре:
+
+```bash
+kubectl -n kubeflow-user-example-com get configmap katib-train-script-wine \
+  -o jsonpath='{.data}' | head
+```
+
+Трябва да видиш нещо от типа `serve-model.py: "..."`.
+
+## Стъпка 6: Стартирай Katib експеримента от UI
+
+В Kubeflow UI:
+
+1. **Katib → Experiments → Create**
+2. Пейстни YAML-а (този, който изпрати) и Create.
+
+## Стъпка 7: Какво да очакваш в Trial логовете
+
+Когато Trial Pod-ът стартира, той ще има:
+
+* `/opt/train/serve-model.py` (от ConfigMap)
+* `/mnt/model` (от PVC `wine-model-pvc`)
+
+В логовете трябва да видиш:
+
+* `accuracy=...`
+* `model_saved=/mnt/model/model.pt`
+* `preprocess_saved=/mnt/model/preprocess.pt`
+
+---
+
+### Ако редактираш `serve-model.py` по-късно
+
+Всеки път след промяна:
+
+1. пак изпълняваш **само** Step 4 (delete + create configmap),
+2. пускаш нов експеримент / нови trial-и.
+
+Това е — и е напълно съвместимо с кода на експеримента, който даде (mount `/opt/train` от ConfigMap + команда `/opt/train/serve-model.py`).
+
+### Проверка
+Ако всичко е наред и trials в експеримента минавата успешно, можеш да провериш в Volumes -> wine-model-pvc -> иконката за директория в дясно дали се садържат model.pt и preprocess.pt в PVC
+
+## KServe
+Ще направим малък Python server, който:
+- зарежда /mnt/model/model.pt
+- зарежда /mnt/model/preprocess.pt
+- имплементира predict()
+- се пуска от KServe
+Това е стандартният production подход.
+
+### Стъпка 1 – Създай serving скрипт (server.py) - `./serve/server.py`
+### Стъпка 2 – Dockerfile - `./serve/Dockerfile`
+#### Стъпка A1: Отвори Terminal в notebook-а
+1. JupyterLab → Launcher → Terminal
+2. Отиди в папката:
+```sh
+cd /home/jovyan/wine-kserve
+ls -la
+```
+#### Стъпка A2: Направи “build context” като tar.gz
+Kaniko очаква контекст (папката) да е достъпна. Най-лесно е да направим архив:
+```sh
+tar -czf context.tar.gz Dockerfile server.py
+ls -la context.tar.gz
+```
+#### Стъпка A3: Качи контекста в PVC (за да е видим за Kaniko Job)
+Чудесно — това уточнение прави картината ясна: **MicroK8s (и Kubeflow/KServe) ти живеят вътре в Docker контейнера `kubeflow-control-plane`**. Значи KServe няма как да “видя” image-а, който си билднал на Docker Desktop, докато **не го внесеш вътре** в container runtime-а на MicroK8s в този контейнер.
+
+1. Дръж `server.py` и `Dockerfile` локално (на твоя компютър)
+
+В папката ти (примерно `C:\Projects\wine-kserve\` или WSL path), да имаш:
+
+* `server.py`
+* `Dockerfile`
+
+(Това са serving файловете; *не* ти трябват `model.pt` локално — KServe ще ги чете от PVC.)
+
+2. Build image в Docker Desktop
+
+В терминал (PowerShell или WSL) от папката с Dockerfile:
+```bash
+docker build -t wine-kserve:latest .
+```
+
+Провери, че го имаш:
+```bash
+docker images | findstr wine-kserve
+```
+
+3. Save image като tar
+```bash
+docker save wine-kserve:latest -o wine-kserve.tar
+```
+
+Провери, че файлът съществува:
+```powershell
+dir .\wine-kserve.tar
+```
+
+4. Качи tar файла във контейнера `kubeflow-control-plane`
+
+Първо провери името (вече го знаем, но да е сигурно):
+```bash
+docker ps --format "table {{.Names}}\t{{.Image}}"
+```
+После:
+```bash
+docker cp "C:\Projects\MNISTPlaybook\homework\serve\wine-kserve.tar" kubeflow-control-plane:/root/wine-kserve.tar
+```
+Провери дали се е копирало с
+```sh
+docker exec -it kubeflow-control-plane sh -lc "ls -la /root | head -n 50; stat /root/wine-kserve.tar && du -h /root/wine-kserve.tar | head -n 1"
+```
+Открий кой runtime имаш вътре и дали има ctr
+```sh
+docker exec -it kubeflow-control-plane sh -lc "which ctr || true; which nerdctl || true; which crictl || true; which kubectl || true; ls -la /run/containerd/containerd.sock 2>/dev/null || true; ls -la /var/run/containerd/containerd.sock 2>/dev/null || true"
+```
+-В 90% от подобни “control-plane” контейнери (kind/k3d/подобни) има ctr и socket /run/containerd/containerd.sock.
+
+
+TODO: СТИГНАГ ДО ТУК!!!
+5. Импортни image-а в containerd (k8s.io)
+```sh
+docker exec -it kubeflow-control-plane sh -lc "ctr -n k8s.io images import /root/wine-kserve.tar"
+```
+След това провери, че е вътре:
+```sh
+docker exec -it kubeflow-control-plane sh -lc "ctr -n k8s.io images ls | grep -E 'wine-kserve|wine' || true"
+```
+Ако видиш wine-kserve:latest — готово.
+
+
+#### Създай InferenceService през Kubeflow UI
+
+Kubeflow UI → **Models** → **Create** → **YAML** и постави:
+```yaml
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: wine-model
+  namespace: kubeflow-user-example-com
+spec:
+  predictor:
+    containers:
+      - name: wine-container
+        image: wine-kserve:latest
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+          - name: model-pvc
+            mountPath: /mnt/model
+    volumes:
+      - name: model-pvc
+        persistentVolumeClaim:
+          claimName: wine-model-pvc
+```
+
+Това казва:
+
+* **не дърпай** image (`IfNotPresent`), а ползвай локалния импортнат
+* монтирай PVC-то с `model.pt` и `preprocess.pt` в `/mnt/model`
+
+---
+
+# Стъпка 7: Провери READY и тествай
+
+В **Models** гледаш `READY=True`.
+
+Ако искаш тест от терминал (вътре в `kubeflow-control-plane` е най-удобно), после ще ти дам точния `curl` според URL-а, който UI показва за услугата.
+
+---
+
+## Най-честата причина да не тръгне след импорт
+
+Ако в YAML сложиш `imagePullPolicy: Always`, Kubernetes ще се опита да тегли от registry и ще се провали. Затова настоявам за **IfNotPresent**.
+
+---
+
+Ако ми копираш 2 неща, ще ти кажа точния тестов `curl` без гадаене:
+
+1. какъв endpoint/URL показва UI за `wine-model` (или screenshot)
+2. изхода от:
+
+```bash
+docker exec -it kubeflow-control-plane bash -lc "microk8s kubectl -n kubeflow-user-example-com get inferenceservice wine-model -o yaml | sed -n '1,160p'"
+```
