@@ -1,0 +1,21 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: wine-model
+  namespace: kubeflow-user-example-com
+  annotations:
+    serving.kserve.io/deploymentMode: RawDeployment
+spec:
+  predictor:
+    containers:
+      - name: kserve-container
+        image: wine-kserve:latest
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+          - name: model-pvc
+            mountPath: /mnt/model
+            readOnly: true
+    volumes:
+      - name: model-pvc
+        persistentVolumeClaim:
+          claimName: wine-model-pvc

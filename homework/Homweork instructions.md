@@ -677,8 +677,6 @@ docker exec -it kubeflow-control-plane sh -lc "which ctr || true; which nerdctl 
 ```
 -В 90% от подобни “control-plane” контейнери (kind/k3d/подобни) има ctr и socket /run/containerd/containerd.sock.
 
-
-TODO: СТИГНАГ ДО ТУК!!!
 5. Импортни image-а в containerd (k8s.io)
 ```sh
 docker exec -it kubeflow-control-plane sh -lc "ctr -n k8s.io images import /root/wine-kserve.tar"
@@ -689,57 +687,22 @@ docker exec -it kubeflow-control-plane sh -lc "ctr -n k8s.io images ls | grep -E
 ```
 Ако видиш wine-kserve:latest — готово.
 
+#### Създай InferenceService YAML файл (в notebook-а или локално)
+Предпоставка
 
-#### Създай InferenceService през Kubeflow UI
+Вече имаш:
 
-Kubeflow UI → **Models** → **Create** → **YAML** и постави:
-```yaml
-apiVersion: serving.kserve.io/v1beta1
-kind: InferenceService
-metadata:
-  name: wine-model
-  namespace: kubeflow-user-example-com
-spec:
-  predictor:
-    containers:
-      - name: wine-container
-        image: wine-kserve:latest
-        imagePullPolicy: IfNotPresent
-        volumeMounts:
-          - name: model-pvc
-            mountPath: /mnt/model
-    volumes:
-      - name: model-pvc
-        persistentVolumeClaim:
-          claimName: wine-model-pvc
+* `wine-model-pvc` с `model.pt` и `preprocess.pt`
+* serving image `wine-kserve:latest` импортнат в containerd **namespace `k8s.io`** (след `ctr -n k8s.io images import ...`)
+
+---
+1. Създай InferenceService YAML файл (локално на уиндоус машината) (`serve\wine-isvc.yaml`)
+```sh
+docker cp wine-isvc.yaml kubeflow-control-plane:/root/wine-isvc.yaml
+docker exec -it kubeflow-control-plane sh -lc "kubectl apply -f /root/wine-isvc.yaml"
 ```
-
-Това казва:
-
-* **не дърпай** image (`IfNotPresent`), а ползвай локалния импортнат
-* монтирай PVC-то с `model.pt` и `preprocess.pt` в `/mnt/model`
-
----
-
-# Стъпка 7: Провери READY и тествай
-
-В **Models** гледаш `READY=True`.
-
-Ако искаш тест от терминал (вътре в `kubeflow-control-plane` е най-удобно), после ще ти дам точния `curl` според URL-а, който UI показва за услугата.
-
----
-
-## Най-честата причина да не тръгне след импорт
-
-Ако в YAML сложиш `imagePullPolicy: Always`, Kubernetes ще се опита да тегли от registry и ще се провали. Затова настоявам за **IfNotPresent**.
-
----
-
-Ако ми копираш 2 неща, ще ти кажа точния тестов `curl` без гадаене:
-
-1. какъв endpoint/URL показва UI за `wine-model` (или screenshot)
-2. изхода от:
-
-```bash
-docker exec -it kubeflow-control-plane bash -lc "microk8s kubectl -n kubeflow-user-example-com get inferenceservice wine-model -o yaml | sed -n '1,160p'"
+Стъпка 4: Провери статус
+```sh
+docker exec -it kubeflow-control-plane sh -lc "kubectl -n kubeflow-user-example-com get inferenceservice wine-model -o wide"
 ```
+// TODO: Check why it is false and check hot do serve the response
